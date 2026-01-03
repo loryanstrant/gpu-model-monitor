@@ -1,0 +1,10 @@
+history/
+logs/
+*.log
+*.db
+*.tmp
+*.bak
+.vscode/
+.DS_Store
+__pycache__/
+*.pyc

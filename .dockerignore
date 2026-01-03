@@ -1,0 +1,13 @@
+*.log
+*.tmp
+*.bak
+.git
+.gitignore
+README.md
+.vscode
+.DS_Store
+__pycache__
+*.pyc
+.pytest_cache
+history/
+logs/

@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  gpu-model-monitor:
+    build: .
+    container_name: gpu-model-monitor
+    ports:
+      - "8081:8081"
+    environment:
+      - TZ=America/Los_Angeles
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./history:/app/history:rw
+      - ./logs:/app/logs:rw
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    runtime: nvidia

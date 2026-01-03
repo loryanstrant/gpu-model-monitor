@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPU Model Monitor</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <style>
+        :root {
+            --primary: #2196f3;
+            --success: #4caf50;
+            --warning: #ffc107;
+            --danger: #f44336;
+            --bg-dark: #0a1929;
+            --bg-card: #132f4c;
+            --text-primary: #ffffff;
+            --text-secondary: #b2bac2;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            line-height: 1.5;
+            padding: 2rem;
+        }
+
+        .dashboard {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            color: var(--primary);
+        }
+
+        .header p {
+            color: var(--text-secondary);
+        }
+
+        .info-badge {
+            display: inline-block;
+            background: var(--bg-card);
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            margin: 0.25rem;
+            font-size: 0.875rem;
+        }
+
+        .info-badge strong {
+            color: var(--primary);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .metric-card {
+            text-align: center;
+        }
+
+        .metric-label {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+        }
+
+        .gauge {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .gauge-fill {
+            height: 100%;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+
+        .gauge-fill.success { background: var(--success); }
+        .gauge-fill.warning { background: var(--warning); }
+        .gauge-fill.danger { background: var(--danger); }
+
+        .chart-container {
+            height: 350px;
+            margin-top: 1rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        th {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        th:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        th.sortable::after {
+            content: ' ↕';
+            opacity: 0.5;
+        }
+
+        th.sort-asc::after {
+            content: ' ↑';
+            opacity: 1;
+        }
+
+        th.sort-desc::after {
+            content: ' ↓';
+            opacity: 1;
+        }
+
+        tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .filter-container {
+            margin-bottom: 1rem;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .filter-input {
+            flex: 1;
+            padding: 0.5rem;
+            background: var(--bg-dark);
+            border: 1px solid var(--primary);
+            border-radius: 0.25rem;
+            color: var(--text-primary);
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+
+        .status-active {
+            background: var(--success);
+            color: white;
+        }
+
+        .status-inactive {
+            background: var(--text-secondary);
+            color: var(--bg-dark);
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+            
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .filter-container {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <header class="header">
+            <h1 id="gpuTitle">GPU Model Monitor</h1>
+            <p>Real-time performance metrics with model tracking</p>
+            <div style="margin-top: 1rem;">
+                <span class="info-badge"><strong>Driver:</strong> <span id="driverVersion">--</span></span>
+                <span class="info-badge"><strong>CUDA:</strong> <span id="cudaVersion">--</span></span>
+            </div>
+        </header>
+
+        <!-- Current Metrics -->
+        <div class="grid">
+            <div class="card metric-card">
+                <div class="metric-label">Temperature</div>
+                <div class="metric-value" id="temp-value">--°C</div>
+                <div class="gauge">
+                    <div class="gauge-fill" id="temp-gauge"></div>
+                </div>
+            </div>
+
+            <div class="card metric-card">
+                <div class="metric-label">GPU Utilization</div>
+                <div class="metric-value" id="util-value">--%</div>
+                <div class="gauge">
+                    <div class="gauge-fill" id="util-gauge"></div>
+                </div>
+            </div>
+
+            <div class="card metric-card">
+                <div class="metric-label">Memory Usage</div>
+                <div class="metric-value" id="mem-value">-- MiB</div>
+                <div class="gauge">
+                    <div class="gauge-fill" id="mem-gauge"></div>
+                </div>
+            </div>
+
+            <div class="card metric-card">
+                <div class="metric-label">Power Usage</div>
+                <div class="metric-value" id="power-value">-- W</div>
+                <div class="gauge">
+                    <div class="gauge-fill" id="power-gauge"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Performance History Chart -->
+        <div class="card">
+            <h2>Performance History</h2>
+            <div class="chart-container">
+                <canvas id="historyChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Active GPU Processes -->
+        <div class="card">
+            <h2>Active GPU Processes</h2>
+            <div class="filter-container">
+                <input type="text" id="processFilter" class="filter-input" placeholder="Filter by process name or PID...">
+            </div>
+            <table id="processTable">
+                <thead>
+                    <tr>
+                        <th class="sortable" data-sort="pid">PID</th>
+                        <th class="sortable" data-sort="process_name">Process Name</th>
+                        <th class="sortable" data-sort="memory">Current Memory (MiB)</th>
+                        <th class="sortable" data-sort="max_memory">Max Memory (MiB)</th>
+                        <th class="sortable" data-sort="avg_memory">Avg Memory (MiB)</th>
+                        <th class="sortable" data-sort="lifetime">Lifetime</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="process-table-body">
+                    <tr><td colspan="7" style="text-align:center;">No active processes</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Process History -->
+        <div class="card">
+            <h2>Process History (Last 100)</h2>
+            <div class="filter-container">
+                <input type="text" id="historyFilter" class="filter-input" placeholder="Filter by process name or PID...">
+            </div>
+            <table id="historyTable">
+                <thead>
+                    <tr>
+                        <th class="sortable" data-sort="pid">PID</th>
+                        <th class="sortable" data-sort="process_name">Process Name</th>
+                        <th class="sortable" data-sort="first_seen">First Seen</th>
+                        <th class="sortable" data-sort="last_seen">Last Seen</th>
+                        <th class="sortable" data-sort="lifetime_seconds">Lifetime</th>
+                        <th class="sortable" data-sort="max_memory">Max Memory (MiB)</th>
+                        <th class="sortable" data-sort="avg_memory">Avg Memory (MiB)</th>
+                        <th class="sortable" data-sort="sample_count">Samples</th>
+                    </tr>
+                </thead>
+                <tbody id="history-table-body">
+                    <tr><td colspan="8" style="text-align:center;">Loading history...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Chart.js
+        const ctx = document.getElementById('historyChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Temperature (°C)',
+                    borderColor: '#f44336',
+                    data: [],
+                    tension: 0.4,
+                    fill: false,
+                    yAxisID: 'y'
+                }, {
+                    label: 'GPU Usage (%)',
+                    borderColor: '#4caf50',
+                    data: [],
+                    tension: 0.4,
+                    fill: false,
+                    yAxisID: 'y'
+                }, {
+                    label: 'Memory (MiB)',
+                    borderColor: '#2196f3',
+                    data: [],
+                    tension: 0.4,
+                    fill: false,
+                    yAxisID: 'y1'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                scales: {
+                    y: {
+                        type: 'linear',
+                        position: 'left',
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#b2bac2'
+                        }
+                    },
+                    y1: {
+                        type: 'linear',
+                        position: 'right',
+                        beginAtZero: true,
+                        grid: {
+                            drawOnChartArea: false
+                        },
+                        ticks: {
+                            color: '#b2bac2'
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            maxTicksLimit: 20,
+                            color: '#b2bac2'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#b2bac2'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Global state
+        let currentProcesses = [];
+        let processHistory = [];
+        let processSortColumn = 'pid';
+        let processSortDirection = 'asc';
+        let historySortColumn = 'last_seen';
+        let historySortDirection = 'desc';
+
+        // Update gauge color
+        function updateGaugeColor(value, element, max = 100) {
+            if (value === 'N/A' || value === null || isNaN(value)) {
+                value = 0;
+            }
+            const percentage = (value / max) * 100;
+            let colorClass = 'success';
+            if (percentage > 70) colorClass = 'danger';
+            else if (percentage > 50) colorClass = 'warning';
+            
+            element.className = 'gauge-fill ' + colorClass;
+            element.style.width = Math.min(percentage, 100) + '%';
+        }
+
+        // Format lifetime in human-readable format
+        function formatLifetime(seconds) {
+            if (!seconds || seconds < 0) return '--';
+            
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            
+            if (hours > 0) {
+                return `${hours}h ${minutes}m`;
+            } else if (minutes > 0) {
+                return `${minutes}m ${secs}s`;
+            } else {
+                return `${secs}s`;
+            }
+        }
+
+        // Sort table data
+        function sortData(data, column, direction) {
+            return [...data].sort((a, b) => {
+                let aVal = a[column];
+                let bVal = b[column];
+                
+                // Handle numeric values
+                if (typeof aVal === 'number' && typeof bVal === 'number') {
+                    return direction === 'asc' ? aVal - bVal : bVal - aVal;
+                }
+                
+                // Handle string values
+                aVal = String(aVal || '');
+                bVal = String(bVal || '');
+                
+                if (direction === 'asc') {
+                    return aVal.localeCompare(bVal);
+                } else {
+                    return bVal.localeCompare(aVal);
+                }
+            });
+        }
+
+        // Update process table
+        function updateProcessTable(filter = '') {
+            const tbody = document.getElementById('process-table-body');
+            
+            if (!currentProcesses || currentProcesses.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No active processes</td></tr>';
+                return;
+            }
+            
+            // Filter data
+            let filteredData = currentProcesses;
+            if (filter) {
+                const filterLower = filter.toLowerCase();
+                filteredData = currentProcesses.filter(p => 
+                    String(p.pid).includes(filterLower) ||
+                    p.process_name.toLowerCase().includes(filterLower)
+                );
+            }
+            
+            // Sort data
+            const sortedData = sortData(filteredData, processSortColumn, processSortDirection);
+            
+            // Render table
+            tbody.innerHTML = sortedData.map(process => {
+                const lifetime = formatLifetime(process.lifetime_seconds || 0);
+                const status = process.lifetime_seconds < 10 ? 
+                    '<span class="status-badge status-active">Active</span>' : 
+                    '<span class="status-badge status-active">Active</span>';
+                
+                return `
+                    <tr>
+                        <td>${process.pid}</td>
+                        <td>${process.process_name}</td>
+                        <td>${(process.max_memory || 0).toFixed(1)}</td>
+                        <td>${(process.max_memory || 0).toFixed(1)}</td>
+                        <td>${(process.avg_memory || 0).toFixed(1)}</td>
+                        <td>${lifetime}</td>
+                        <td>${status}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Update history table
+        function updateHistoryTable(filter = '') {
+            const tbody = document.getElementById('history-table-body');
+            
+            if (!processHistory || processHistory.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No process history</td></tr>';
+                return;
+            }
+            
+            // Filter data
+            let filteredData = processHistory;
+            if (filter) {
+                const filterLower = filter.toLowerCase();
+                filteredData = processHistory.filter(p => 
+                    String(p.pid).includes(filterLower) ||
+                    p.process_name.toLowerCase().includes(filterLower)
+                );
+            }
+            
+            // Sort data
+            const sortedData = sortData(filteredData, historySortColumn, historySortDirection);
+            
+            // Render table
+            tbody.innerHTML = sortedData.map(process => {
+                const lifetime = formatLifetime(process.lifetime_seconds || 0);
+                
+                return `
+                    <tr>
+                        <td>${process.pid}</td>
+                        <td>${process.process_name}</td>
+                        <td>${process.first_seen || '--'}</td>
+                        <td>${process.last_seen || '--'}</td>
+                        <td>${lifetime}</td>
+                        <td>${(process.max_memory || 0).toFixed(1)}</td>
+                        <td>${(process.avg_memory || 0).toFixed(1)}</td>
+                        <td>${process.sample_count || 0}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Setup table sorting
+        function setupTableSorting(tableId, sortColumn, sortDirection, updateFunction) {
+            const table = document.getElementById(tableId);
+            const headers = table.querySelectorAll('th.sortable');
+            
+            headers.forEach(header => {
+                header.addEventListener('click', () => {
+                    const column = header.dataset.sort;
+                    
+                    // Toggle direction if clicking the same column
+                    if (column === sortColumn) {
+                        sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        sortColumn = column;
+                        sortDirection = 'asc';
+                    }
+                    
+                    // Update header classes
+                    headers.forEach(h => {
+                        h.classList.remove('sort-asc', 'sort-desc');
+                    });
+                    header.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+                    
+                    // Update appropriate sort variables
+                    if (tableId === 'processTable') {
+                        processSortColumn = sortColumn;
+                        processSortDirection = sortDirection;
+                    } else {
+                        historySortColumn = sortColumn;
+                        historySortDirection = sortDirection;
+                    }
+                    
+                    // Re-render table
+                    updateFunction();
+                });
+            });
+        }
+
+        // Update GPU config
+        function updateGPUConfig() {
+            fetch('gpu_config.json')
+                .then(response => response.json())
+                .then(config => {
+                    document.getElementById('gpuTitle').textContent = config.gpu_name || 'GPU Model Monitor';
+                    document.getElementById('driverVersion').textContent = config.driver_version || 'Unknown';
+                    document.getElementById('cudaVersion').textContent = config.cuda_version || 'Unknown';
+                    document.querySelector('title').textContent = (config.gpu_name || 'GPU') + ' Model Monitor';
+                })
+                .catch(error => console.error('Error loading GPU config:', error));
+        }
+
+        // Update current stats
+        function updateStats() {
+            fetch('gpu_current_stats.json')
+                .then(response => response.json())
+                .then(data => {
+                    // Update current metrics
+                    document.getElementById('temp-value').textContent = `${data.temperature}°C`;
+                    document.getElementById('util-value').textContent = `${data.utilization}%`;
+                    document.getElementById('mem-value').textContent = `${Math.round(data.memory)} MiB`;
+                    document.getElementById('power-value').textContent = `${data.power.toFixed(1)} W`;
+                    
+                    // Update gauges
+                    updateGaugeColor(data.temperature, document.getElementById('temp-gauge'), 100);
+                    updateGaugeColor(data.utilization, document.getElementById('util-gauge'), 100);
+                    updateGaugeColor(data.memory, document.getElementById('mem-gauge'), 24576);
+                    updateGaugeColor(data.power, document.getElementById('power-gauge'), 400);
+                    
+                    // Update current processes
+                    if (data.current_processes && Array.isArray(data.current_processes)) {
+                        currentProcesses = data.current_processes;
+                        updateProcessTable(document.getElementById('processFilter').value);
+                    }
+                })
+                .catch(error => console.error('Error updating stats:', error));
+        }
+
+        // Update chart
+        function updateChart() {
+            fetch('history/history.json')
+                .then(response => response.json())
+                .then(data => {
+                    if (!data || data.length === 0) return;
+                    
+                    // Take last 100 data points for better performance
+                    const maxPoints = 100;
+                    const startIdx = Math.max(0, data.length - maxPoints);
+                    const recentData = data.slice(startIdx);
+                    
+                    chart.data.labels = recentData.map(d => d.timestamp);
+                    chart.data.datasets[0].data = recentData.map(d => d.temperature);
+                    chart.data.datasets[1].data = recentData.map(d => d.utilization);
+                    chart.data.datasets[2].data = recentData.map(d => d.memory);
+                    chart.update('none');
+                })
+                .catch(error => console.error('Error updating chart:', error));
+        }
+
+        // Update process history
+        function updateProcessHistory() {
+            fetch('history/process_history.json')
+                .then(response => response.json())
+                .then(data => {
+                    if (Array.isArray(data)) {
+                        processHistory = data;
+                        updateHistoryTable(document.getElementById('historyFilter').value);
+                    }
+                })
+                .catch(error => console.error('Error updating process history:', error));
+        }
+
+        // Setup filters
+        document.getElementById('processFilter').addEventListener('input', (e) => {
+            updateProcessTable(e.target.value);
+        });
+
+        document.getElementById('historyFilter').addEventListener('input', (e) => {
+            updateHistoryTable(e.target.value);
+        });
+
+        // Setup table sorting
+        setupTableSorting('processTable', processSortColumn, processSortDirection, 
+            () => updateProcessTable(document.getElementById('processFilter').value));
+        setupTableSorting('historyTable', historySortColumn, historySortDirection, 
+            () => updateHistoryTable(document.getElementById('historyFilter').value));
+
+        // Initialize
+        updateGPUConfig();
+        updateStats();
+        updateChart();
+        updateProcessHistory();
+
+        // Update intervals
+        setInterval(updateStats, 5000);  // Every 5 seconds
+        setInterval(updateChart, 30000);  // Every 30 seconds
+        setInterval(updateProcessHistory, 30000);  // Every 30 seconds
+    </script>
+</body>
+</html>
