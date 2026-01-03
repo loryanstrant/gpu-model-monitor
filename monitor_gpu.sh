@@ -140,37 +140,110 @@ EOF
 function update_process_tracking() {
     local current_time=$(date +%s)
     
-    # Get current processes using GPU
-    local process_data=$(nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits 2>/dev/null)
+    # Get current processes using GPU from pmon (captures ALL processes, not just compute apps)
+    # Format: gpu pid type sm mem enc dec command
+    # We use -c 1 to get one sample, then parse it
+    local pmon_output=$(nvidia-smi pmon -c 1 2>/dev/null | grep -v "^#" | grep -v "gpu" | awk 'NF')
     
-    if [ -z "$process_data" ]; then
-        log_debug "No GPU processes currently running"
+    if [ -z "$pmon_output" ]; then
+        log_debug "No GPU processes currently running (pmon)"
+        
+        # Fallback: Try parsing standard nvidia-smi output for processes
+        local smi_output=$(nvidia-smi 2>/dev/null)
+        if echo "$smi_output" | grep -q "No running processes found"; then
+            log_debug "No GPU processes found (nvidia-smi)"
+            return 0
+        fi
+        
+        # Try to extract process info from nvidia-smi table format
+        # Look for lines with process information after "Processes:" section
+        local process_lines=$(echo "$smi_output" | awk '/Processes:/,/^$/' | grep -E "^\|.*[0-9]+.*MiB.*\|" | grep -v "Processes")
+        
+        if [ -z "$process_lines" ]; then
+            log_debug "No processes found in nvidia-smi output"
+            return 0
+        fi
+        
+        # Parse nvidia-smi process table format
+        # Format: |  GPU   GI   CI        PID   Type   Process name                  GPU Memory |
+        # Example: |    0   N/A  N/A      1234      C   python                          1000MiB |
+        echo "$process_lines" | while IFS='|' read -r _ gpu _ _ pid ptype process_name memory _; do
+            # Clean up values
+            pid=$(echo "$pid" | tr -d ' ')
+            process_name=$(echo "$process_name" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            memory=$(echo "$memory" | sed 's/MiB//;s/^[[:space:]]*//;s/[[:space:]]*$//')
+            
+            if [ -z "$pid" ] || [ "$pid" = "N/A" ] || ! [[ "$pid" =~ ^[0-9]+$ ]]; then
+                continue
+            fi
+            
+            # Escape single quotes in process name
+            process_name=$(echo "$process_name" | sed "s/'/''/g")
+            
+            # Insert snapshot and update tracking
+            sqlite3 "$DB_FILE" <<SQL
+            INSERT INTO process_snapshots (timestamp_epoch, pid, process_name, memory_usage)
+            VALUES ($current_time, $pid, '$process_name', $memory);
+            
+            -- Update or insert into gpu_processes
+            INSERT INTO gpu_processes (pid, process_name, first_seen, last_seen, max_memory, avg_memory, sample_count)
+            VALUES ($pid, '$process_name', $current_time, $current_time, $memory, $memory, 1)
+            ON CONFLICT(pid) DO UPDATE SET
+                last_seen = $current_time,
+                max_memory = MAX(max_memory, $memory),
+                avg_memory = ((avg_memory * sample_count) + $memory) / (sample_count + 1),
+                sample_count = sample_count + 1;
+SQL
+        done
+        
         return 0
     fi
     
-    # Process each running process
-    echo "$process_data" | while IFS=',' read -r pid process_name memory; do
-        # Clean up whitespace
-        pid=$(echo "$pid" | tr -d ' ')
-        process_name=$(echo "$process_name" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        memory=$(echo "$memory" | tr -d ' ')
-        
-        if [ -z "$pid" ] || [ "$pid" = "N/A" ]; then
+    # Process pmon output
+    # Format: gpu pid type sm mem enc dec command
+    echo "$pmon_output" | while read -r gpu_id pid ptype sm mem enc dec command rest; do
+        # Skip invalid lines
+        if [ -z "$pid" ] || [ "$pid" = "-" ] || ! [[ "$pid" =~ ^[0-9]+$ ]]; then
             continue
         fi
         
-        # Insert snapshot
+        # Get process name and memory from nvidia-smi query
+        local process_info=$(nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits 2>/dev/null | grep "^[[:space:]]*$pid[[:space:]]*,")
+        
+        if [ -n "$process_info" ]; then
+            # Parse compute app info
+            local proc_pid=$(echo "$process_info" | cut -d',' -f1 | tr -d ' ')
+            local proc_name=$(echo "$process_info" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local proc_mem=$(echo "$process_info" | cut -d',' -f3 | tr -d ' ')
+        else
+            # For non-compute processes, use command from pmon and estimate memory
+            local proc_pid="$pid"
+            local proc_name="$command"
+            # Try to get memory from nvidia-smi standard output
+            local smi_mem=$(nvidia-smi 2>/dev/null | grep -E "^\|.*$pid.*MiB" | sed 's/.*[[:space:]]\([0-9]\+\)MiB.*/\1/')
+            local proc_mem="${smi_mem:-0}"
+        fi
+        
+        # Skip if we couldn't determine the PID
+        if [ -z "$proc_pid" ] || [ "$proc_pid" = "N/A" ]; then
+            continue
+        fi
+        
+        # Escape single quotes in process name
+        proc_name=$(echo "$proc_name" | sed "s/'/''/g")
+        
+        # Insert snapshot and update tracking
         sqlite3 "$DB_FILE" <<SQL
         INSERT INTO process_snapshots (timestamp_epoch, pid, process_name, memory_usage)
-        VALUES ($current_time, $pid, '$process_name', $memory);
+        VALUES ($current_time, $proc_pid, '$proc_name', $proc_mem);
         
         -- Update or insert into gpu_processes
         INSERT INTO gpu_processes (pid, process_name, first_seen, last_seen, max_memory, avg_memory, sample_count)
-        VALUES ($pid, '$process_name', $current_time, $current_time, $memory, $memory, 1)
+        VALUES ($proc_pid, '$proc_name', $current_time, $current_time, $proc_mem, $proc_mem, 1)
         ON CONFLICT(pid) DO UPDATE SET
             last_seen = $current_time,
-            max_memory = MAX(max_memory, $memory),
-            avg_memory = ((avg_memory * sample_count) + $memory) / (sample_count + 1),
+            max_memory = MAX(max_memory, $proc_mem),
+            avg_memory = ((avg_memory * sample_count) + $proc_mem) / (sample_count + 1),
             sample_count = sample_count + 1;
 SQL
     done
