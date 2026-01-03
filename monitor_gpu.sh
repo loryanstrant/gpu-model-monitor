@@ -23,9 +23,11 @@ DEBUG_LOG="$LOG_DIR/debug.log"
 DB_FILE="$HISTORY_DIR/gpu_metrics.db"
 INTERVAL=4  # Time between GPU checks (seconds)
 
-# Create required directories
+# Create required directories with proper permissions
 mkdir -p "$LOG_DIR"
+chmod 755 "$LOG_DIR"
 mkdir -p "$HISTORY_DIR"
+chmod 755 "$HISTORY_DIR"
 
 ###############################################################################
 # Logging Functions
