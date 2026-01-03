@@ -150,21 +150,23 @@ Dashboard (browser)
 ## Process Tracking Flow
 
 ```
-1. nvidia-smi --query-compute-apps
+1. nvidia-smi pmon -c 1 (captures ALL processes)
    ↓
-2. Parse PID, name, memory
+2. Fallback: Parse nvidia-smi standard output if pmon fails
    ↓
-3. Check if PID exists in DB
+3. Parse PID, name, memory for each process
    ↓
-4. Update or Insert record
+4. Check if PID exists in DB
    ↓
-5. Calculate statistics
+5. Update existing or Insert new record
    ↓
-6. Mark last_seen
+6. Calculate statistics (max, avg)
    ↓
-7. Export to JSON
+7. Mark last_seen timestamp
    ↓
-8. Dashboard displays
+8. Export to JSON
+   ↓
+9. Dashboard displays
 ```
 
 ## Key Features Implementation
@@ -176,10 +178,13 @@ Dashboard (browser)
 
 ### Process Monitoring
 - Runs every 4 seconds
-- Tracks PID, name, memory
-- Records first/last seen
-- Calculates max/avg memory
-- Maintains full history
+- Uses `nvidia-smi pmon` to capture ALL GPU processes (compute, graphics, OpenCL)
+- Fallback to parsing standard nvidia-smi output if pmon unavailable
+- Tracks PID, name, memory for each process type
+- Records first/last seen timestamps
+- Calculates max/avg memory usage
+- Maintains full history in SQLite database
+- Handles both compute (C) and graphics (G) process types
 
 ### Process Lifetime Tracking
 - First seen: timestamp of first detection

@@ -167,11 +167,18 @@ function update_process_tracking() {
         # Parse nvidia-smi process table format
         # Format: |  GPU   GI   CI        PID   Type   Process name                  GPU Memory |
         # Example: |    0   N/A  N/A      1234      C   python                          1000MiB |
-        echo "$process_lines" | while IFS='|' read -r _ gpu _ _ pid ptype process_name memory _; do
-            # Clean up values
+        echo "$process_lines" | while IFS='|' read -r _ content; do
+            # Extract fields from the content between pipes
+            gpu=$(echo "$content" | awk '{print $1}')
+            pid=$(echo "$content" | awk '{print $4}')
+            ptype=$(echo "$content" | awk '{print $5}')
+            # Process name is everything between field 6 and the last field
+            process_name=$(echo "$content" | awk '{for(i=6;i<=NF-1;i++) printf "%s ", $i}' | sed 's/[[:space:]]*$//')
+            memory=$(echo "$content" | awk '{print $NF}' | sed 's/MiB//')
+            
+            # Clean up whitespace
             pid=$(echo "$pid" | tr -d ' ')
-            process_name=$(echo "$process_name" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            memory=$(echo "$memory" | sed 's/MiB//;s/^[[:space:]]*//;s/[[:space:]]*$//')
+            memory=$(echo "$memory" | tr -d ' ')
             
             if [ -z "$pid" ] || [ "$pid" = "N/A" ] || ! [[ "$pid" =~ ^[0-9]+$ ]]; then
                 continue
