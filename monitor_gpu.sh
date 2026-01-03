@@ -187,17 +187,27 @@ function get_current_processes() {
     
     sqlite3 -json "$DB_FILE" <<SQL
     SELECT 
-        pid,
-        process_name,
-        datetime(first_seen, 'unixepoch') as first_seen,
-        datetime(last_seen, 'unixepoch') as last_seen,
-        (last_seen - first_seen) as lifetime_seconds,
-        max_memory,
-        avg_memory,
-        sample_count
-    FROM gpu_processes
-    WHERE last_seen > $cutoff_time
-    ORDER BY last_seen DESC;
+        p.pid,
+        p.process_name,
+        datetime(p.first_seen, 'unixepoch') as first_seen,
+        datetime(p.last_seen, 'unixepoch') as last_seen,
+        (p.last_seen - p.first_seen) as lifetime_seconds,
+        COALESCE(s.memory_usage, p.max_memory) as memory,
+        p.max_memory,
+        p.avg_memory,
+        p.sample_count
+    FROM gpu_processes p
+    LEFT JOIN (
+        SELECT pid, memory_usage
+        FROM process_snapshots
+        WHERE (pid, timestamp_epoch) IN (
+            SELECT pid, MAX(timestamp_epoch)
+            FROM process_snapshots
+            GROUP BY pid
+        )
+    ) s ON p.pid = s.pid
+    WHERE p.last_seen > $cutoff_time
+    ORDER BY p.last_seen DESC;
 SQL
 }
 
@@ -277,6 +287,11 @@ SQL
         # Get current processes for display
         local current_processes=$(get_current_processes)
         
+        # Ensure current_processes is valid JSON (empty array if no output)
+        if [ -z "$current_processes" ] || [ "$current_processes" = "[]" ]; then
+            current_processes="[]"
+        fi
+        
         # Create JSON content with processes
         local json_content=$(cat << EOF
 {
@@ -304,7 +319,7 @@ function export_history_json() {
     local output_file="$HISTORY_DIR/history.json"
     local cutoff_time=$(( $(date +%s) - 259200 ))  # 3 days
     
-    sqlite3 -json "$DB_FILE" <<SQL > "$output_file"
+    local history_data=$(sqlite3 -json "$DB_FILE" <<SQL
     SELECT 
         timestamp,
         temperature,
@@ -315,7 +330,14 @@ function export_history_json() {
     WHERE timestamp_epoch > $cutoff_time
     ORDER BY timestamp_epoch ASC;
 SQL
+)
     
+    # Ensure valid JSON array
+    if [ -z "$history_data" ]; then
+        history_data="[]"
+    fi
+    
+    safe_write_json "$output_file" "$history_data"
     chmod 666 "$output_file" 2>/dev/null
 }
 
@@ -325,6 +347,11 @@ SQL
 function export_process_history() {
     local output_file="$HISTORY_DIR/process_history.json"
     local process_history=$(get_process_history)
+    
+    # Ensure valid JSON array
+    if [ -z "$process_history" ]; then
+        process_history="[]"
+    fi
     
     safe_write_json "$output_file" "$process_history"
     chmod 666 "$output_file" 2>/dev/null
