@@ -351,6 +351,13 @@
                     tension: 0.4,
                     fill: false,
                     yAxisID: 'y1'
+                }, {
+                    label: 'Power (W)',
+                    borderColor: '#ffc107',
+                    data: [],
+                    tension: 0.4,
+                    fill: false,
+                    yAxisID: 'y2'
                 }]
             },
             options: {
@@ -370,6 +377,11 @@
                         },
                         ticks: {
                             color: '#b2bac2'
+                        },
+                        title: {
+                            display: true,
+                            text: 'Temperature (°C) / GPU Usage (%)',
+                            color: '#b2bac2'
                         }
                     },
                     y1: {
@@ -380,6 +392,27 @@
                             drawOnChartArea: false
                         },
                         ticks: {
+                            color: '#b2bac2'
+                        },
+                        title: {
+                            display: true,
+                            text: 'Memory (MiB)',
+                            color: '#b2bac2'
+                        }
+                    },
+                    y2: {
+                        type: 'linear',
+                        position: 'right',
+                        beginAtZero: true,
+                        grid: {
+                            drawOnChartArea: false
+                        },
+                        ticks: {
+                            color: '#b2bac2'
+                        },
+                        title: {
+                            display: true,
+                            text: 'Power (W)',
                             color: '#b2bac2'
                         }
                     },
@@ -397,6 +430,29 @@
                     legend: {
                         labels: {
                             color: '#b2bac2'
+                        },
+                        onClick: (e, legendItem, legend) => {
+                            const index = legendItem.datasetIndex;
+                            const ci = legend.chart;
+                            const meta = ci.getDatasetMeta(index);
+
+                            // Toggle visibility
+                            meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
+                            ci.update();
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    label += context.parsed.y.toFixed(1);
+                                }
+                                return label;
+                            }
                         }
                     }
                 }
@@ -603,19 +659,29 @@
         // Update current stats
         function updateStats() {
             fetch('gpu_current_stats.json')
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
                 .then(data => {
-                    // Update current metrics
-                    document.getElementById('temp-value').textContent = `${data.temperature}°C`;
-                    document.getElementById('util-value').textContent = `${data.utilization}%`;
-                    document.getElementById('mem-value').textContent = `${Math.round(data.memory)} MiB`;
-                    document.getElementById('power-value').textContent = `${data.power.toFixed(1)} W`;
+                    // Update current metrics with safe defaults
+                    const temperature = data.temperature || 0;
+                    const utilization = data.utilization || 0;
+                    const memory = data.memory || 0;
+                    const power = data.power || 0;
+                    
+                    document.getElementById('temp-value').textContent = `${temperature}°C`;
+                    document.getElementById('util-value').textContent = `${utilization}%`;
+                    document.getElementById('mem-value').textContent = `${Math.round(memory)} MiB`;
+                    document.getElementById('power-value').textContent = `${power.toFixed(1)} W`;
                     
                     // Update gauges
-                    updateGaugeColor(data.temperature, document.getElementById('temp-gauge'), 100);
-                    updateGaugeColor(data.utilization, document.getElementById('util-gauge'), 100);
-                    updateGaugeColor(data.memory, document.getElementById('mem-gauge'), 24576);
-                    updateGaugeColor(data.power, document.getElementById('power-gauge'), 400);
+                    updateGaugeColor(temperature, document.getElementById('temp-gauge'), 100);
+                    updateGaugeColor(utilization, document.getElementById('util-gauge'), 100);
+                    updateGaugeColor(memory, document.getElementById('mem-gauge'), 24576);
+                    updateGaugeColor(power, document.getElementById('power-gauge'), 400);
                     
                     // Update current processes
                     if (data.current_processes && Array.isArray(data.current_processes)) {
@@ -642,6 +708,7 @@
                     chart.data.datasets[0].data = recentData.map(d => d.temperature);
                     chart.data.datasets[1].data = recentData.map(d => d.utilization);
                     chart.data.datasets[2].data = recentData.map(d => d.memory);
+                    chart.data.datasets[3].data = recentData.map(d => d.power || 0);
                     chart.update('none');
                 })
                 .catch(error => console.error('Error updating chart:', error));
