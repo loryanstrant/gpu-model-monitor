@@ -175,7 +175,7 @@ function update_process_tracking() {
         
         # Try to extract process info from nvidia-smi table format
         # Look for lines with process information after "Processes:" section
-        local process_lines=$(echo "$smi_output" | awk '/Processes:/,/^$/' | grep -E "^\|.*[0-9]+.*MiB.*\|" | grep -v "Processes")
+        local process_lines=$(echo "$smi_output" | awk '/Processes:/,/^$/' | grep -E "^\|.*[0-9]+.*MB.*\|" | grep -v "Processes")
         
         if [ -z "$process_lines" ]; then
             log_debug "No processes found in nvidia-smi table output"
@@ -186,7 +186,7 @@ function update_process_tracking() {
         
         # Parse nvidia-smi process table format
         # Format: |  GPU   GI   CI        PID   Type   Process name                  GPU Memory |
-        # Example: |    0   N/A  N/A      1234      C   python                          1000MiB |
+        # Example: |    0   N/A  N/A      1234      C   python                          1000MB |
         while IFS='|' read -r _ content _; do
             # Skip empty lines
             [ -z "$content" ] && continue
@@ -197,7 +197,7 @@ function update_process_tracking() {
             local ptype=$(echo "$content" | awk '{print $5}')
             # Process name: if NF > 6, join fields 6 to NF-1; if NF == 6, use field 6
             local process_name=$(echo "$content" | awk '{if (NF > 6) {for(i=6;i<=NF-1;i++) printf "%s ", $i; printf "\n"} else {print $6}}' | sed 's/[[:space:]]*$//')
-            local memory=$(echo "$content" | awk '{print $NF}' | sed 's/MiB//')
+            local memory=$(echo "$content" | awk '{print $NF}' | sed 's/MB//')
             
             # Clean up whitespace
             pid=$(echo "$pid" | tr -d ' ')
@@ -281,7 +281,7 @@ SQL
             local proc_pid="$pid"
             local proc_name="$command"
             # Extract memory from cached nvidia-smi output (more flexible PID matching)
-            local smi_mem=$(echo "$smi_output" | grep -E "^\|.*[[:space:]]${pid}[[:space:]].*MiB" | sed 's/.*[[:space:]]\([0-9]\+\)MiB.*/\1/')
+            local smi_mem=$(echo "$smi_output" | grep -E "^\|.*[[:space:]]${pid}[[:space:]].*MB" | sed 's/.*[[:space:]]\([0-9]\+\)MB.*/\1/')
             local proc_mem="${smi_mem:-0}"
             log_debug "Not in compute_apps, using pmon: PID=$proc_pid, Name=$proc_name, Mem=$proc_mem"
         fi
