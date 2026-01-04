@@ -346,8 +346,8 @@ function get_current_processes() {
     SELECT 
         p.pid,
         p.process_name,
-        datetime(p.first_seen, 'unixepoch') as first_seen,
-        datetime(p.last_seen, 'unixepoch') as last_seen,
+        datetime(p.first_seen, 'unixepoch', 'localtime') as first_seen,
+        datetime(p.last_seen, 'unixepoch', 'localtime') as last_seen,
         (p.last_seen - p.first_seen) as lifetime_seconds,
         COALESCE(s.memory_usage, p.max_memory) as memory,
         p.max_memory,
@@ -387,8 +387,8 @@ function get_process_history() {
     SELECT 
         pid,
         process_name,
-        datetime(first_seen, 'unixepoch') as first_seen,
-        datetime(last_seen, 'unixepoch') as last_seen,
+        datetime(first_seen, 'unixepoch', 'localtime') as first_seen,
+        datetime(last_seen, 'unixepoch', 'localtime') as last_seen,
         (last_seen - first_seen) as lifetime_seconds,
         max_memory,
         avg_memory,
