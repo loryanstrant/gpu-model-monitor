@@ -33,6 +33,12 @@ A comprehensive Docker-based NVIDIA GPU monitoring solution with enhanced proces
   - Interactive charts and gauges
   - Process filtering and sorting
 
+
+## Screenshot
+<img width="1204" height="1370" alt="image" src="https://github.com/user-attachments/assets/e00bfd4e-c24e-435d-b52c-1ab57e16dc9b" />
+
+
+
 ## Quick Start
 
 ### Using Pre-built Image from GHCR
@@ -211,6 +217,10 @@ Data retention:
 - **Database**: SQLite3 for efficient data storage
 - **Frontend**: Vanilla JavaScript with Chart.js
 - **Web Server**: aiohttp (Python async web framework)
+
+## Development Approach
+<img width="256" height="256" alt="image" src="https://github.com/user-attachments/assets/9bdff80e-30d2-4c30-acb2-37154d7748e1" />
+
 
 ## License
 
