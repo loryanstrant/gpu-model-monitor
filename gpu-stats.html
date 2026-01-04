@@ -434,7 +434,7 @@
                                     label += ': ';
                                 }
                                 if (context.parsed.y !== null) {
-                                    label += context.parsed.y.toFixed(1);
+                                    label += formatNumber(context.parsed.y);
                                 }
                                 return label;
                             }
@@ -506,6 +506,11 @@
             });
         }
 
+        // Format number without unnecessary decimals
+        function formatNumber(num) {
+            return Number.isInteger(num) ? num.toString() : num.toFixed(1);
+        }
+
         // Update process table
         function updateProcessTable(filter = '') {
             const tbody = document.getElementById('process-table-body');
@@ -539,9 +544,9 @@
                     <tr>
                         <td>${process.pid}</td>
                         <td>${process.process_name}</td>
-                        <td>${(process.memory || 0).toFixed(1)}</td>
-                        <td>${(process.max_memory || 0).toFixed(1)}</td>
-                        <td>${(process.avg_memory || 0).toFixed(1)}</td>
+                        <td>${formatNumber(process.memory || 0)}</td>
+                        <td>${formatNumber(process.max_memory || 0)}</td>
+                        <td>${formatNumber(process.avg_memory || 0)}</td>
                         <td>${lifetime}</td>
                         <td>${status}</td>
                     </tr>
@@ -582,8 +587,8 @@
                         <td>${process.first_seen || '--'}</td>
                         <td>${process.last_seen || '--'}</td>
                         <td>${lifetime}</td>
-                        <td>${(process.max_memory || 0).toFixed(1)}</td>
-                        <td>${(process.avg_memory || 0).toFixed(1)}</td>
+                        <td>${formatNumber(process.max_memory || 0)}</td>
+                        <td>${formatNumber(process.avg_memory || 0)}</td>
                         <td>${process.sample_count || 0}</td>
                     </tr>
                 `;
@@ -660,7 +665,7 @@
                     document.getElementById('temp-value').textContent = `${temperature}°C`;
                     document.getElementById('util-value').textContent = `${utilization}%`;
                     document.getElementById('mem-value').textContent = `${Math.round(memory)} MB`;
-                    document.getElementById('power-value').textContent = `${power.toFixed(1)} W`;
+                    document.getElementById('power-value').textContent = `${formatNumber(power)} W`;
                     
                     // Update gauges
                     updateGaugeColor(temperature, document.getElementById('temp-gauge'), 100);
