@@ -7,8 +7,8 @@ RUN apt-get update && apt-get install -y \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install aiohttp
-RUN pip install aiohttp
+# Install Python dependencies
+RUN pip install --no-cache-dir aiohttp paho-mqtt psutil
 
 # Create app directory
 WORKDIR /app
@@ -19,10 +19,12 @@ RUN mkdir -p /app/history /app/logs
 # Copy application files
 COPY gpu-stats.html /app/
 COPY monitor_gpu.sh /app/
+COPY mqtt_publisher.py /app/
+COPY enrich_processes.py /app/
 COPY server.py /app/
 
 # Make scripts executable
-RUN chmod +x /app/monitor_gpu.sh
+RUN chmod +x /app/monitor_gpu.sh /app/mqtt_publisher.py /app/enrich_processes.py
 
 # Expose port for web server
 EXPOSE 8081
