@@ -42,9 +42,22 @@ A comprehensive Docker-based NVIDIA GPU monitoring solution with enhanced proces
   - Timezone-aware timestamps
 
 
-## Screenshot
-<img width=\"1204\" height=\"1370\" alt=\"image\" src=\"https://github.com/user-attachments/assets/e00bfd4e-c24e-435d-b52c-1ab57e16dc9b\"  />
+## Screenshots
 
+### Home Assistant - device
+<img width="1624" height="942" alt="image" src="https://github.com/user-attachments/assets/b6c666af-a7c0-47f3-9f01-2d89ab453a93" />
+
+### Home Assistant - entity attributes
+<img width="1677" height="1147" alt="image" src="https://github.com/user-attachments/assets/f70e2099-095a-4d67-83bc-a8e670934426" />
+
+### Web interface - graph
+<img width="2189" height="1216" alt="image" src="https://github.com/user-attachments/assets/8fed2b88-cc2d-4d08-a582-1b4b749e9aee" />
+
+### Web interface - active processes
+<img width="2166" height="753" alt="image" src="https://github.com/user-attachments/assets/06ead70b-bc66-4ebb-8296-e159d300d9f4" />
+
+### Web interface - process history
+<img width="2171" height="922" alt="image" src="https://github.com/user-attachments/assets/5de38bd2-11c6-4bf2-9eb1-8f4c745974f7" />
 
 
 ## Quick Start
@@ -335,7 +348,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## Acknowledgments
 
-Based on the concept from [bigsk1/gpu-monitor](https://github.com/bigsk1/gpu-monitor) with enhanced process tracking capabilities and Home Assistant integration.
+Based on the concept from [bigsk1/gpu-monitor](https://github.com/bigsk1/gpu-monitor) with enhanced process tracking capabilities and MQTT / Home Assistant integration.
 
 ## Contributing
 
