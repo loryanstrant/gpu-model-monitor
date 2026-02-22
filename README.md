@@ -1,6 +1,6 @@
 # GPU Model Monitor
 
-A comprehensive Docker-based NVIDIA GPU monitoring solution with enhanced process tracking capabilities. This tool monitors GPU metrics in real-time and tracks model/process usage over time, providing insights into GPU utilization, memory consumption, and process lifetimes.
+A comprehensive Docker-based NVIDIA GPU monitoring solution with enhanced process tracking capabilities and **Home Assistant integration via MQTT**. This tool monitors GPU metrics in real-time and tracks model/process usage over time, providing insights into GPU utilization, memory consumption, and process lifetimes.
 
 ![Docker support](https://img.shields.io/badge/docker-supported-blue)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -13,9 +13,16 @@ A comprehensive Docker-based NVIDIA GPU monitoring solution with enhanced proces
   
 - **Enhanced Process Tracking**
   - Track all GPU processes with PID, process name, and memory usage
-  - Monitor process lifetimes to see how long models were loaded
+  - Monitor process lifetimes with **actual OS process start times** (not container-relative)
   - Historical process data with max/average memory consumption
   - Sortable and filterable process tables
+  
+- **Home Assistant Integration** ✨ NEW
+  - MQTT publishing with auto-discovery
+  - Real-time GPU metrics as sensors
+  - Active processes with detailed attributes
+  - Process history tracking
+  - Easy integration with Home Assistant automations
   
 - **System Information**
   - NVIDIA driver version
@@ -32,10 +39,11 @@ A comprehensive Docker-based NVIDIA GPU monitoring solution with enhanced proces
   - Real-time metrics updates
   - Interactive charts and gauges
   - Process filtering and sorting
+  - Timezone-aware timestamps
 
 
 ## Screenshot
-<img width="1204" height="1370" alt="image" src="https://github.com/user-attachments/assets/e00bfd4e-c24e-435d-b52c-1ab57e16dc9b" />
+<img width=\"1204\" height=\"1370\" alt=\"image\" src=\"https://github.com/user-attachments/assets/e00bfd4e-c24e-435d-b52c-1ab57e16dc9b\"  />
 
 
 
@@ -44,15 +52,15 @@ A comprehensive Docker-based NVIDIA GPU monitoring solution with enhanced proces
 ### Using Pre-built Image from GHCR
 
 ```bash
-docker run -d \
-  --name gpu-model-monitor \
-  --pid=host \
-  -p 8081:8081 \
-  -e TZ=America/Los_Angeles \
-  -v ./history:/app/history:rw \
-  -v ./logs:/app/logs:rw \
-  --gpus all \
-  --restart unless-stopped \
+docker run -d \\
+  --name gpu-model-monitor \\
+  --pid=host \\
+  -p 8081:8081 \\
+  -e TZ=America/Los_Angeles \\
+  -v ./history:/app/history:rw \\
+  -v ./logs:/app/logs:rw \\
+  --gpus all \\
+  --restart unless-stopped \\
   ghcr.io/loryanstrant/gpu-model-monitor:latest
 ```
 
@@ -66,12 +74,22 @@ git clone https://github.com/loryanstrant/gpu-model-monitor.git
 cd gpu-model-monitor
 ```
 
-2. Start the container:
+2. (Optional) Configure MQTT for Home Assistant integration:
+```bash
+# Edit docker-compose.yml and set MQTT variables:
+MQTT_ENABLED=true
+MQTT_HOST=your-mqtt-broker.local
+MQTT_PORT=1883
+MQTT_USERNAME=your_username
+MQTT_PASSWORD=your_password
+```
+
+3. Start the container:
 ```bash
 docker-compose up -d
 ```
 
-3. Access the dashboard at: [http://localhost:8081](http://localhost:8081)
+4. Access the dashboard at: [http://localhost:8081](http://localhost:8081)
 
 ## Prerequisites
 
@@ -79,6 +97,7 @@ docker-compose up -d
 - NVIDIA GPU
 - NVIDIA Container Toolkit
 - NVIDIA drivers installed on host
+- (Optional) MQTT broker for Home Assistant integration
 
 ### Installing NVIDIA Container Toolkit
 
@@ -86,9 +105,9 @@ docker-compose up -d
 
 ```bash
 # Add NVIDIA package repositories
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
-  && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \\
+  && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \\
+    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \\
     sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
 ```
 
@@ -126,14 +145,15 @@ cd gpu-model-monitor
 docker build -t gpu-model-monitor .
 
 # Run the container
-docker run -d \
-  --name gpu-model-monitor \
-  -p 8081:8081 \
-  -e TZ=America/Los_Angeles \
-  -v ./history:/app/history:rw \
-  -v ./logs:/app/logs:rw \
-  --gpus all \
-  --restart unless-stopped \
+docker run -d \\
+  --name gpu-model-monitor \\
+  --pid=host \\
+  -p 8081:8081 \\
+  -e TZ=America/Los_Angeles \\
+  -v ./history:/app/history:rw \\
+  -v ./logs:/app/logs:rw \\
+  --gpus all \\
+  --restart unless-stopped \\
   gpu-model-monitor
 ```
 
@@ -150,20 +170,88 @@ docker run -d \
 ### Active GPU Processes
 - Live view of all processes currently using the GPU
 - Shows PID, process name, current/max/average memory usage
+- **Actual OS process start times** - accurate even across container restarts
 - Lifetime tracking to see how long each process has been running
 - Filter and sort capabilities for easy analysis
 
 ### Process History
 - Complete history of all GPU processes (last 100)
-- Track when processes started and stopped
+- Track when processes started and stopped (in your local timezone)
 - View maximum and average memory consumption
 - Number of samples collected for each process
+
+## Home Assistant Integration
+
+### Setting Up MQTT
+
+1. **Configure Environment Variables** in `docker-compose.yml`:
+   ```yaml
+   environment:
+     - TZ=Your/Timezone  # e.g., America/Los_Angeles
+     - MQTT_ENABLED=true
+     - MQTT_HOST=mqtt.example.com  # Your MQTT broker
+     - MQTT_PORT=1883
+     - MQTT_SSL=false  # Set to true if using SSL/TLS
+     - MQTT_USERNAME=your_username
+     - MQTT_PASSWORD=your_password
+     - MQTT_TOPIC_PREFIX=gpu_monitor  # Default topic prefix
+   ```
+
+2. **Restart the container**:
+   ```bash
+   docker-compose down && docker-compose up -d
+   ```
+
+3. **Auto-Discovery**: The integration automatically creates Home Assistant sensors using MQTT Discovery. No manual configuration needed!
+
+### Available Sensors
+
+The following sensors are automatically created in Home Assistant:
+
+- **GPU Temperature** - Real-time temperature in °C
+- **GPU Utilization** - GPU usage percentage
+- **GPU Memory Used** - Memory usage in MiB
+- **GPU Power Draw** - Power consumption in Watts
+- **GPU Process Count** - Number of active GPU processes
+- **GPU Active Processes** - Detailed process information with attributes:
+  - PID
+  - Process name
+  - Current/Max/Average memory usage
+  - **Actual OS process start time**
+  - Process lifetime (formatted)
+  - Status
+- **GPU Process History** - Historical process data
+
+### Example Home Assistant Automation
+
+```yaml
+automation:
+  - alias: \"Notify on High GPU Temperature\"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.gpu_monitor_nvidia_geforce_rtx_5080_temperature
+        above: 80
+    action:
+      - service: notify.mobile_app
+        data:
+          message: \"GPU temperature is {{ states('sensor.gpu_monitor_nvidia_geforce_rtx_5080_temperature') }}°C!\"
+```
 
 ## Configuration
 
 ### Environment Variables
 
-- `TZ`: Timezone (default: America/Los_Angeles)
+#### Basic Configuration
+- `TZ`: Timezone (default: America/Los_Angeles) - affects timestamp display in web interface and MQTT
+
+#### MQTT Configuration (Optional)
+- `MQTT_ENABLED`: Enable/disable MQTT publishing (default: false)
+- `MQTT_HOST`: MQTT broker hostname or IP address
+- `MQTT_PORT`: MQTT broker port (default: 1883)
+- `MQTT_SSL`: Enable SSL/TLS for MQTT (default: false)
+- `MQTT_USERNAME`: MQTT authentication username
+- `MQTT_PASSWORD`: MQTT authentication password
+- `MQTT_TOPIC_PREFIX`: Topic prefix for MQTT messages (default: gpu_monitor)
 
 ### Volumes
 
@@ -207,19 +295,38 @@ Data retention:
 - Ensure port 8081 is not in use
 
 ### Process tracking not working
+- **Verify PID host mode is enabled**: `--pid=host` or `pid: \"host\"` in docker-compose.yml
 - Verify nvidia-smi can list processes: `nvidia-smi pmon`
 - Check database permissions in history directory
 - Review logs in `./logs/error.log`
 
+### Process lifetimes resetting
+- Ensure `--pid=host` is set - this allows the container to query actual OS process start times
+- Without host PID mode, lifetimes will be relative to container start time
+
+### MQTT not connecting
+- Verify MQTT broker is accessible from container
+- Check MQTT credentials
+- Review logs: `docker logs gpu-model-monitor | grep MQTT`
+- Test MQTT broker: `mosquitto_sub -h your-broker -p 1883 -u user -P pass -t '#'`
+
+### Home Assistant sensors not appearing
+- Ensure MQTT integration is configured in Home Assistant
+- Check Home Assistant MQTT logs
+- Wait 30-60 seconds for auto-discovery
+- Check MQTT topic: `homeassistant/sensor/+/+/config`
+
 ## Architecture
 
-- **Backend**: Bash script with Python web server
+- **Backend**: Bash script with Python web server and MQTT publisher
 - **Database**: SQLite3 for efficient data storage
 - **Frontend**: Vanilla JavaScript with Chart.js
 - **Web Server**: aiohttp (Python async web framework)
+- **MQTT Client**: paho-mqtt (Python MQTT library)
+- **Process Info**: psutil (Python system utilities library)
 
 ## Development Approach
-<img width="256" height="256" alt="image" src="https://github.com/user-attachments/assets/9bdff80e-30d2-4c30-acb2-37154d7748e1" />
+<img width=\"256\" height=\"256\" alt=\"image\" src=\"https://github.com/user-attachments/assets/9bdff80e-30d2-4c30-acb2-37154d7748e1\" />
 
 
 ## License
@@ -228,7 +335,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## Acknowledgments
 
-Based on the concept from [bigsk1/gpu-monitor](https://github.com/bigsk1/gpu-monitor) with enhanced process tracking capabilities.
+Based on the concept from [bigsk1/gpu-monitor](https://github.com/bigsk1/gpu-monitor) with enhanced process tracking capabilities and Home Assistant integration.
 
 ## Contributing
 
