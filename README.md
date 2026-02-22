@@ -339,8 +339,7 @@ Data retention:
 - **Process Info**: psutil (Python system utilities library)
 
 ## Development Approach
-<img width=\"256\" height=\"256\" alt=\"image\" src=\"https://github.com/user-attachments/assets/9bdff80e-30d2-4c30-acb2-37154d7748e1\" />
-
+<img width="256" height="256" alt="image" src="https://github.com/user-attachments/assets/9bdff80e-30d2-4c30-acb2-37154d7748e1\" />
 
 ## License
 
