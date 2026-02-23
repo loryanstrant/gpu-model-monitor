@@ -99,49 +99,45 @@ function publish_to_mqtt() {
     
     # Publish metrics to MQTT (run in background to not block monitoring)
     python3 "$MQTT_PUBLISHER" "$json_file" 2>&1 | while read line; do
-        # Filter out debug messages unless debug is enabled  
-        if [[ "$line" == *"ERROR"* ]] || [[ "$line" == *"WARNING"* ]] || [[ "${DEBUG:-}" = "true" ]]; then
-            echo "[MQTT] $line"
-        fi
+        log_debug "MQTT: $line"
     done &
 }
 
 ###############################################################################
-# GPU Configuration
+# Get GPU name, driver version, and CUDA version
 ###############################################################################
+GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || echo "GPU")
+DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || echo "Unknown")
+CUDA_VERSION=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || echo "Unknown")
 
-GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n1)
-DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1)
-CUDA_VERSION=$(nvcc --version 2>/dev/null | grep -oP 'release \K[0-9.]+' | head -n1)
-CUDA_VERSION_FULL=$(nvidia-smi 2>/dev/null | grep "CUDA Version" | awk '{print $9}')
+# Get CUDA version from nvidia-smi output
+CUDA_VERSION_FULL=$(nvidia-smi | grep "CUDA Version" | sed 's/.*CUDA Version: \([0-9.]*\).*/\1/' || echo "Unknown")
 
-if [ -z "$CUDA_VERSION" ] && [ -n "$CUDA_VERSION_FULL" ]; then
-    CUDA_VERSION="$CUDA_VERSION_FULL"
-fi
+CONFIG_FILE="$BASE_DIR/gpu_config.json"
 
-if [ -z "$GPU_NAME" ]; then
-    echo "ERROR: Could not detect NVIDIA GPU. Make sure nvidia-smi is available."
-    exit 1
-fi
-
-# Save GPU configuration to JSON for web interface
-cat > "$BASE_DIR/gpu_config.json" <<EOF
+# Create config JSON with GPU info
+cat > "$CONFIG_FILE" << EOF
 {
-    "gpu_name": "$GPU_NAME",
-    "driver_version": "$DRIVER_VERSION",
-    "cuda_version": "$CUDA_VERSION"
+    "gpu_name": "${GPU_NAME}",
+    "driver_version": "${DRIVER_VERSION}",
+    "cuda_version": "${CUDA_VERSION_FULL}"
 }
 EOF
 
 ###############################################################################
-# Database Initialization
+# initialize_database: Creates and initializes the SQLite database
 ###############################################################################
-
 function initialize_database() {
-    log_info "Initializing database: $DB_FILE"
+    log_debug "Initializing SQLite database at $DB_FILE"
     
-    sqlite3 "$DB_FILE" <<EOF
-    -- Table for GPU metrics history
+    if [ ! -f "$DB_FILE" ]; then
+        log_debug "Creating new database file"
+        touch "$DB_FILE"
+        chmod 666 "$DB_FILE"
+    fi
+    
+    # Create SQLite tables and indexes
+    sqlite3 "$DB_FILE" << EOF
     CREATE TABLE IF NOT EXISTS gpu_metrics (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TEXT NOT NULL,
@@ -183,112 +179,215 @@ function initialize_database() {
 EOF
     
     if [ $? -ne 0 ]; then
-        log_error "Failed to initialize database"
-        exit 1
+        log_error "Failed to initialize SQLite database"
+        return 1
     fi
     
-    log_info "Database initialized successfully"
+    log_debug "Database initialized successfully"
+    return 0
 }
 
 ###############################################################################
-# Process Tracking Functions
+# update_process_tracking: Track GPU processes
 ###############################################################################
 
-function get_gpu_processes() {
-    nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits 2>/dev/null
+# Helper function to validate PID
+is_valid_pid() {
+    local pid="$1"
+    [ -n "$pid" ] && [ "$pid" != "N/A" ] && [ "$pid" != "-" ] && [[ "$pid" =~ ^[0-9]+$ ]]
 }
 
 function update_process_tracking() {
     local current_time=$(date +%s)
-    local gpu_processes=$(get_gpu_processes)
+    local process_count=0
     
-    if [ -z "$gpu_processes" ]; then
-        log_debug "No GPU processes currently running"
+    # Cache nvidia-smi outputs to avoid repeated calls
+    local smi_output=$(nvidia-smi 2>/dev/null)
+    local compute_apps=$(nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits 2>/dev/null)
+    
+    log_debug "Starting process tracking at timestamp: $current_time"
+    
+    # Get current processes using GPU from pmon (captures ALL processes, not just compute apps)
+    local pmon_raw=$(nvidia-smi pmon -c 1 2>/dev/null)
+    local pmon_output=$(echo "$pmon_raw" | grep -v "^#" | awk 'NF')
+    
+    log_debug "pmon raw output line count: $(echo "$pmon_raw" | wc -l)"
+    log_debug "pmon filtered output: $pmon_output"
+    
+    if [ -z "$pmon_output" ]; then
+        log_debug "No GPU processes currently running (pmon empty)"
+        
+        # Fallback: Try parsing standard nvidia-smi output for processes
+        if echo "$smi_output" | grep -q "No running processes found"; then
+            log_debug "No GPU processes found (nvidia-smi reports none)"
+            return 0
+        fi
+        
+        local process_lines=$(echo "$smi_output" | awk '/Processes:/,/^$/' | grep -E "^\|.*[0-9]+.*MiB.*\|" | grep -v "Processes")
+        
+        if [ -z "$process_lines" ]; then
+            log_debug "No processes found in nvidia-smi table output"
+            return 0
+        fi
+        
+        log_debug "Found process lines in nvidia-smi output, parsing..."
+        
+        while IFS='|' read -r _ content _; do
+            [ -z "$content" ] && continue
+            
+            local gpu=$(echo "$content" | awk '{print $1}')
+            local pid=$(echo "$content" | awk '{print $4}')
+            local ptype=$(echo "$content" | awk '{print $5}')
+            local process_name=$(echo "$content" | awk '{if (NF > 6) {for(i=6;i<=NF-1;i++) printf "%s ", $i; printf "\n"} else {print $6}}' | sed 's/[[:space:]]*$//')
+            local memory=$(echo "$content" | awk '{print $NF}' | sed 's/MiB//')
+            
+            pid=$(echo "$pid" | tr -d ' ')
+            memory=$(echo "$memory" | tr -d ' ')
+            
+            log_debug "Parsed nvidia-smi: PID=$pid, Name=$process_name, Mem=$memory"
+            
+            if ! is_valid_pid "$pid"; then
+                log_debug "Invalid PID: $pid, skipping"
+                continue
+            fi
+            
+            if ! [[ "$memory" =~ ^[0-9]+$ ]]; then
+                log_debug "Invalid memory value: $memory, defaulting to 0"
+                memory="0"
+            fi
+            
+            process_name=$(echo "$process_name" | sed "s/'/''/g")
+            
+            if sql_result=$(sqlite3 "$DB_FILE" 2>&1 <<SQL
+INSERT INTO process_snapshots (timestamp_epoch, pid, process_name, memory_usage)
+VALUES ($current_time, $pid, '$process_name', $memory);
+
+INSERT INTO gpu_processes (pid, process_name, first_seen, last_seen, max_memory, avg_memory, sample_count)
+VALUES ($pid, '$process_name', $current_time, $current_time, $memory, $memory, 1)
+ON CONFLICT(pid) DO UPDATE SET
+    last_seen = $current_time,
+    max_memory = MAX(max_memory, $memory),
+    avg_memory = ((avg_memory * sample_count) + $memory) / (sample_count + 1),
+    sample_count = sample_count + 1;
+SQL
+); then
+                process_count=$((process_count + 1))
+                log_debug "Successfully inserted/updated process PID=$pid"
+            else
+                log_error "Failed to insert process PID=$pid: $sql_result"
+            fi
+        done < <(echo "$process_lines")
+        
+        log_debug "Processed $process_count processes from nvidia-smi output"
         return 0
     fi
     
-    while IFS=',' read -r pid name memory; do
-        # Clean up values
-        pid=$(echo "$pid" | tr -d ' ')
-        name=$(echo "$name" | tr -d ' ' | sed 's/[^a-zA-Z0-9._-]/_/g')
-        memory=$(echo "$memory" | tr -d ' ' | sed 's/[^0-9.]//g')
+    log_debug "Found pmon output, processing..."
+    
+    while read -r gpu_id pid ptype sm mem_util enc dec command rest; do
+        [ -z "$pid" ] && continue
         
-        if [ -z "$pid" ] || [ -z "$memory" ]; then
+        log_debug "Parsed pmon: GPU=$gpu_id, PID=$pid, Type=$ptype, Command=$command"
+        
+        if ! is_valid_pid "$pid"; then
+            log_debug "Invalid PID from pmon: $pid, skipping"
             continue
         fi
         
-        # Insert snapshot
-        sqlite3 "$DB_FILE" <<SQL
-        INSERT INTO process_snapshots (timestamp_epoch, pid, process_name, memory_usage)
-        VALUES ($current_time, $pid, '$name', $memory);
-SQL
+        local process_info=$(echo "$compute_apps" | grep -E "^[[:space:]]*${pid}[[:space:]]*,|^${pid}[[:space:]]*,")
         
-        # Update or insert process tracking
-        sqlite3 "$DB_FILE" <<SQL
-        INSERT INTO gpu_processes (pid, process_name, first_seen, last_seen, max_memory, avg_memory, sample_count)
-        VALUES (
-            $pid, 
-            '$name', 
-            $current_time, 
-            $current_time, 
-            $memory, 
-            $memory,
-            1
-        )
-        ON CONFLICT(pid) DO UPDATE SET
-            last_seen = $current_time,
-            max_memory = MAX(max_memory, $memory),
-            avg_memory = ((avg_memory * sample_count) + $memory) / (sample_count + 1),
-            sample_count = sample_count + 1;
-SQL
+        if [ -n "$process_info" ]; then
+            local proc_pid=$(echo "$process_info" | cut -d',' -f1 | tr -d ' ')
+            local proc_name=$(echo "$process_info" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local proc_mem=$(echo "$process_info" | cut -d',' -f3 | tr -d ' ')
+            log_debug "Found in compute_apps: PID=$proc_pid, Name=$proc_name, Mem=$proc_mem"
+        else
+            local proc_pid="$pid"
+            local proc_name="$command"
+            local smi_mem=$(echo "$smi_output" | grep -E "^\|.*[[:space:]]${pid}[[:space:]].*MiB" | sed 's/.*[[:space:]]\([0-9]\+\)MiB.*/\1/')
+            local proc_mem="${smi_mem:-0}"
+            log_debug "Not in compute_apps, using pmon: PID=$proc_pid, Name=$proc_name, Mem=$proc_mem"
+        fi
         
-    done <<< "$gpu_processes"
+        if ! is_valid_pid "$proc_pid"; then
+            log_debug "Invalid processed PID: $proc_pid, skipping"
+            continue
+        fi
+        
+        if ! [[ "$proc_mem" =~ ^[0-9]+$ ]]; then
+            log_debug "Invalid memory value: $proc_mem, defaulting to 0"
+            proc_mem="0"
+        fi
+        
+        proc_name=$(echo "$proc_name" | sed "s/'/''/g")
+        
+        if sql_result=$(sqlite3 "$DB_FILE" 2>&1 <<SQL
+INSERT INTO process_snapshots (timestamp_epoch, pid, process_name, memory_usage)
+VALUES ($current_time, $proc_pid, '$proc_name', $proc_mem);
+
+INSERT INTO gpu_processes (pid, process_name, first_seen, last_seen, max_memory, avg_memory, sample_count)
+VALUES ($proc_pid, '$proc_name', $current_time, $current_time, $proc_mem, $proc_mem, 1)
+ON CONFLICT(pid) DO UPDATE SET
+    last_seen = $current_time,
+    max_memory = MAX(max_memory, $proc_mem),
+    avg_memory = ((avg_memory * sample_count) + $proc_mem) / (sample_count + 1),
+    sample_count = sample_count + 1;
+SQL
+); then
+            process_count=$((process_count + 1))
+            log_debug "Successfully inserted/updated process PID=$proc_pid"
+        else
+            log_error "Failed to insert process PID=$proc_pid: $sql_result"
+        fi
+    done < <(echo "$pmon_output")
+    
+    log_debug "Processed $process_count processes from pmon output"
 }
 
 ###############################################################################
-# Current Process Query with Enrichment
+# get_current_processes: Get current GPU processes as JSON
 ###############################################################################
-
 function get_current_processes() {
-    local mem_total="$1"
-    log_debug "Getting current processes"
+    local mem_total="${1:-0}"
+    local current_time=$(date +%s)
+    local cutoff_time=$((current_time - 10))
+    
+    log_debug "Getting current processes with cutoff_time=$cutoff_time, total_memory=$mem_total"
     
     if result=$(sqlite3 -json "$DB_FILE" 2>&1 <<SQL
-    SELECT DISTINCT
-        ps.pid,
-        ps.process_name,
-        ps.memory_usage as memory,
-        gp.max_memory,
-        gp.avg_memory,
-        gp.sample_count,
-        datetime(gp.first_seen, 'unixepoch', 'localtime') as first_seen,
-        datetime(gp.last_seen, 'unixepoch', 'localtime') as last_seen,
-        (gp.last_seen - gp.first_seen) as lifetime_seconds
-    FROM (
-        SELECT pid, process_name, memory_usage,
-               ROW_NUMBER() OVER (PARTITION BY pid ORDER BY timestamp_epoch DESC) as rn
+    SELECT 
+        p.pid,
+        p.process_name,
+        datetime(p.first_seen, 'unixepoch', 'localtime') as first_seen,
+        datetime(p.last_seen, 'unixepoch', 'localtime') as last_seen,
+        (p.last_seen - p.first_seen) as lifetime_seconds,
+        COALESCE(s.memory_usage, p.max_memory) as memory,
+        p.max_memory,
+        p.avg_memory,
+        p.sample_count
+    FROM gpu_processes p
+    LEFT JOIN (
+        SELECT pid, memory_usage
         FROM process_snapshots
-        WHERE timestamp_epoch > (strftime('%s', 'now') - 30)
-    ) ps
-    JOIN gpu_processes gp ON ps.pid = gp.pid
-    WHERE ps.rn = 1
-    ORDER BY ps.memory_usage DESC;
+        WHERE (pid, timestamp_epoch) IN (
+            SELECT pid, MAX(timestamp_epoch)
+            FROM process_snapshots
+            GROUP BY pid
+        )
+    ) s ON p.pid = s.pid
+    WHERE p.last_seen > $cutoff_time
+    ORDER BY p.last_seen DESC;
 SQL
 ); then
-        # Enrich with actual process start times and memory percentages from Python
-        if [ -n "$result" ] && [ "$result" != "[]" ]; then
+        log_debug "Current processes query returned: ${result:0:200}..."
+        # Enrich with actual OS process start times and memory percentages
+        if [ -f "$BASE_DIR/enrich_processes.py" ] && command -v python3 &> /dev/null; then
             result=$(echo "$result" | GPU_MEMORY_TOTAL="$mem_total" python3 "$BASE_DIR/enrich_processes.py" 2>&1)
-            if [ $? -eq 0 ]; then
-                log_debug "Enriched process data: ${result:0:200}..."
-                echo "$result"
-            else
-                log_error "Failed to enrich process data: $result"
-                echo "[]"
-                return 1
+            if [ $? -ne 0 ]; then
+                log_warning "Failed to enrich process data with actual start times"
             fi
-        else
-            echo "[]"
         fi
+        echo "$result"
     else
         log_error "Failed to query current processes: $result"
         echo "[]"
@@ -340,10 +439,11 @@ function safe_write_json() {
     if [ -s "$temp" ]; then
         [ -f "$file" ] && cp "$file" "$backup"
         mv "$temp" "$file"
-        log_debug "Safely wrote to $file"
+        [ -f "$backup" ] && rm "$backup"
+        return 0
     else
-        log_error "Temporary JSON file is empty, not updating $file"
-        rm -f "$temp"
+        log_error "Failed to write to temp file: $temp"
+        [ -f "$backup" ] && mv "$backup" "$file"
         return 1
     fi
 }
@@ -425,6 +525,7 @@ EOF
 ###############################################################################
 function export_history_json() {
     local output_file="$HISTORY_DIR/history.json"
+    local cutoff_time=$(( $(date +%s) - 259200 ))  # 3 days
     
     local history_data=$(sqlite3 -json "$DB_FILE" <<SQL
     SELECT 
@@ -434,8 +535,8 @@ function export_history_json() {
         memory,
         power
     FROM gpu_metrics
-    ORDER BY timestamp_epoch DESC
-    LIMIT 1000;
+    WHERE timestamp_epoch > $cutoff_time
+    ORDER BY timestamp_epoch ASC;
 SQL
 )
     

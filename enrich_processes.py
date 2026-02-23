@@ -15,7 +15,7 @@ def get_process_start_time(pid):
     try:
         proc = psutil.Process(pid)
         start_time_unix = proc.create_time()
-       start_time_str = datetime.fromtimestamp(start_time_unix).strftime('%Y-%m-%d %H:%M:%S')
+        start_time_str = datetime.fromtimestamp(start_time_unix).strftime('%Y-%m-%d %H:%M:%S')
         return start_time_str, start_time_unix
     except (psutil.NoSuchProcess, psutil.AccessDenied, PermissionError):
         return None, None
@@ -84,3 +84,4 @@ if __name__ == '__main__':
     # Enrich and output
     enriched_json = enrich_processes(input_json, gpu_memory_total)
     print(enriched_json)
+

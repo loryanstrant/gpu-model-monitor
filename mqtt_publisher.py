@@ -340,22 +340,42 @@ class GPUMQTTPublisher:
             return False
         
         try:
+            # Get current GPU memory total for percentage calculation
+            mem_total = 0
+            try:
+                with open('/app/gpu_current_stats.json', 'r') as f:
+                    current_stats = json.load(f)
+                    mem_total = current_stats.get('memory_total', 0)
+            except:
+                logger.debug("Could not load memory_total from current stats")
+            
             # Read process history from database via script
             import subprocess
+            
+            # Build SQL query with memory percentage calculation
+            sql_query = f'''SELECT 
+                pid,
+                process_name,
+                datetime(first_seen, 'unixepoch', 'localtime') as first_seen,
+                datetime(last_seen, 'unixepoch', 'localtime') as last_seen,
+                (last_seen - first_seen) as lifetime_seconds,
+                max_memory,
+                avg_memory,
+                CASE 
+                    WHEN {mem_total} > 0 THEN ROUND((avg_memory / {mem_total}) * 100, 2)
+                    ELSE 0 
+                END as avg_memory_percent,
+                CASE 
+                    WHEN {mem_total} > 0 THEN ROUND((max_memory / {mem_total}) * 100, 2)
+                    ELSE 0 
+                END as max_memory_percent,
+                sample_count
+            FROM gpu_processes
+            ORDER BY last_seen DESC
+            LIMIT 50;'''
+            
             result = subprocess.run(
-                ['sqlite3', '-json', '/app/history/gpu_metrics.db',
-                 '''SELECT 
-                    pid,
-                    process_name,
-                    datetime(first_seen, 'unixepoch', 'localtime') as first_seen,
-                    datetime(last_seen, 'unixepoch', 'localtime') as last_seen,
-                    (last_seen - first_seen) as lifetime_seconds,
-                    max_memory,
-                    avg_memory,
-                    sample_count
-                FROM gpu_processes
-                ORDER BY last_seen DESC
-                LIMIT 50;'''],
+                ['sqlite3', '-json', '/app/history/gpu_metrics.db', sql_query],
                 capture_output=True,
                 text=True,
                 timeout=5
@@ -374,7 +394,9 @@ class GPUMQTTPublisher:
                         "last_seen": proc.get("last_seen", "unknown"),
                         "lifetime_seconds": proc.get("lifetime_seconds", 0),
                         "memory_max": proc.get("max_memory", 0),
+                        "memory_max_percent": proc.get("max_memory_percent", 0),
                         "memory_avg": proc.get("avg_memory", 0),
+                        "memory_avg_percent": proc.get("avg_memory_percent", 0),
                         "sample_count": proc.get("sample_count", 0)
                     }
                     formatted_history.append(formatted_proc)
