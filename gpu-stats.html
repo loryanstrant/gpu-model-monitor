@@ -339,12 +339,14 @@
                         <th class="sortable" data-sort="last_seen">Last Seen</th>
                         <th class="sortable" data-sort="lifetime_seconds">Lifetime</th>
                         <th class="sortable" data-sort="max_memory">Max Memory (MB)</th>
+                        <th class="sortable" data-sort="max_memory_percent">Max Memory %</th>
                         <th class="sortable" data-sort="avg_memory">Avg Memory (MB)</th>
+                        <th class="sortable" data-sort="avg_memory_percent">Avg Memory %</th>
                         <th class="sortable" data-sort="sample_count">Samples</th>
                     </tr>
                 </thead>
                 <tbody id="history-table-body">
-                    <tr><td colspan="8" style="text-align:center;">Loading history...</td></tr>
+                    <tr><td colspan="10" style="text-align:center;">Loading history...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -600,7 +602,7 @@
             const tbody = document.getElementById('history-table-body');
             
             if (!processHistory || processHistory.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No process history</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">No process history</td></tr>';
                 return;
             }
             
@@ -620,6 +622,8 @@
             // Render table
             tbody.innerHTML = sortedData.map(process => {
                 const lifetime = formatLifetime(process.lifetime_seconds || 0);
+                const maxMemoryPercent = process.max_memory_percent !== undefined ? formatNumber(process.max_memory_percent) + '%' : '--';
+                const avgMemoryPercent = process.avg_memory_percent !== undefined ? formatNumber(process.avg_memory_percent) + '%' : '--';
                 
                 return `
                     <tr>
@@ -629,7 +633,9 @@
                         <td>${process.last_seen || '--'}</td>
                         <td>${lifetime}</td>
                         <td>${formatNumber(process.max_memory || 0)}</td>
+                        <td>${maxMemoryPercent}</td>
                         <td>${formatNumber(process.avg_memory || 0)}</td>
+                        <td>${avgMemoryPercent}</td>
                         <td>${process.sample_count || 0}</td>
                     </tr>
                 `;

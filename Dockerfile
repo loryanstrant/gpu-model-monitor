@@ -18,7 +18,7 @@ RUN mkdir -p /app/history /app/logs
 
 # Copy application files
 COPY gpu-stats.html /app/
-COPY monitor_gpu.sh /app/
+COPY monitor_gpu_mqtt.sh /app/monitor_gpu.sh
 COPY mqtt_publisher.py /app/
 COPY enrich_processes.py /app/
 COPY server.py /app/
