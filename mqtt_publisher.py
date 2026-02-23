@@ -168,7 +168,8 @@ class GPUMQTTPublisher:
             "name": f"GPU Monitor - {self.gpu_name}",
             "model": self.gpu_name,
             "manufacturer": "NVIDIA",
-            "sw_version": f"Driver {self.driver_version}, CUDA {self.cuda_version}"
+            "sw_version": f"Driver {self.driver_version}, CUDA {self.cuda_version}",
+            "configuration_url": "https://github.com/loryanstrant/gpu-model-monitor"
         }
         
         # Define sensors for Home Assistant

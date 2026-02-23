@@ -204,6 +204,30 @@
             color: var(--bg-dark);
         }
 
+        .footer {
+            text-align: center;
+            margin-top: 2rem;
+            padding: 1.5rem;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .footer a {
+            color: var(--primary);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .footer a:hover {
+            color: #64b5f6;
+            text-decoration: underline;
+        }
+
+        .footer-links {
+            margin-top: 0.5rem;
+        }
+
         @media (max-width: 768px) {
             body {
                 padding: 1rem;
@@ -287,6 +311,7 @@
                         <th class="sortable" data-sort="memory">Current Memory (MB)</th>
                         <th class="sortable" data-sort="max_memory">Max Memory (MB)</th>
                         <th class="sortable" data-sort="avg_memory">Avg Memory (MB)</th>
+                        <th class="sortable" data-sort="process_start_time">Started</th>
                         <th class="sortable" data-sort="lifetime">Lifetime</th>
                         <th>Status</th>
                     </tr>
@@ -321,6 +346,18 @@
                 </tbody>
             </table>
         </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div>
+                <strong>GPU Model Monitor</strong> - Real-time GPU performance tracking
+            </div>
+            <div class="footer-links">
+                <a href="https://github.com/loryanstrant/gpu-model-monitor" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
+                |
+                <a href="https://github.com/loryanstrant" target="_blank" rel="noopener noreferrer">Created by Loryan Strant</a>
+            </div>
+        </footer>
     </div>
 
     <script>
@@ -535,10 +572,9 @@
             
             // Render table
             tbody.innerHTML = sortedData.map(process => {
-                const lifetime = formatLifetime(process.lifetime_seconds || 0);
-                const status = process.lifetime_seconds < 10 ? 
-                    '<span class="status-badge status-active">Active</span>' : 
-                    '<span class="status-badge status-active">Active</span>';
+                const lifetime = process.lifetime_formatted || formatLifetime(process.actual_lifetime_seconds || process.lifetime_seconds || 0);
+                const startTime = process.process_start_time || process.first_seen || '--';
+                const status = '<span class="status-badge status-active">Active</span>';
                 
                 return `
                     <tr>
@@ -547,6 +583,7 @@
                         <td>${formatNumber(process.memory || 0)}</td>
                         <td>${formatNumber(process.max_memory || 0)}</td>
                         <td>${formatNumber(process.avg_memory || 0)}</td>
+                        <td>${startTime}</td>
                         <td>${lifetime}</td>
                         <td>${status}</td>
                     </tr>
