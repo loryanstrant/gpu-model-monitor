@@ -274,7 +274,8 @@
 
             <div class="card metric-card">
                 <div class="metric-label">Memory Usage</div>
-                <div class="metric-value" id="mem-value">-- MB</div>
+                <div class="metric-value" id="mem-value">-- / -- MB</div>
+                <div style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem;" id="mem-percent-label">--%</div>
                 <div class="gauge">
                     <div class="gauge-fill" id="mem-gauge"></div>
                 </div>
@@ -309,6 +310,7 @@
                         <th class="sortable" data-sort="pid">PID</th>
                         <th class="sortable" data-sort="process_name">Process Name</th>
                         <th class="sortable" data-sort="memory">Current Memory (MB)</th>
+                        <th class="sortable" data-sort="memory_percent">Memory %</th>
                         <th class="sortable" data-sort="max_memory">Max Memory (MB)</th>
                         <th class="sortable" data-sort="avg_memory">Avg Memory (MB)</th>
                         <th class="sortable" data-sort="process_start_time">Started</th>
@@ -317,7 +319,7 @@
                     </tr>
                 </thead>
                 <tbody id="process-table-body">
-                    <tr><td colspan="7" style="text-align:center;">No active processes</td></tr>
+                    <tr><td colspan="9" style="text-align:center;">No active processes</td></tr>
                 </tbody>
             </table>
         </div>
@@ -553,7 +555,7 @@
             const tbody = document.getElementById('process-table-body');
             
             if (!currentProcesses || currentProcesses.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No active processes</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">No active processes</td></tr>';
                 return;
             }
             
@@ -574,6 +576,7 @@
             tbody.innerHTML = sortedData.map(process => {
                 const lifetime = process.lifetime_formatted || formatLifetime(process.actual_lifetime_seconds || process.lifetime_seconds || 0);
                 const startTime = process.process_start_time || process.first_seen || '--';
+                const memoryPercent = process.memory_percent !== undefined ? formatNumber(process.memory_percent) + '%' : '--';
                 const status = '<span class="status-badge status-active">Active</span>';
                 
                 return `
@@ -581,6 +584,7 @@
                         <td>${process.pid}</td>
                         <td>${process.process_name}</td>
                         <td>${formatNumber(process.memory || 0)}</td>
+                        <td>${memoryPercent}</td>
                         <td>${formatNumber(process.max_memory || 0)}</td>
                         <td>${formatNumber(process.avg_memory || 0)}</td>
                         <td>${startTime}</td>
@@ -697,17 +701,20 @@
                     const temperature = data.temperature || 0;
                     const utilization = data.utilization || 0;
                     const memory = data.memory || 0;
+                    const memoryTotal = data.memory_total || 0;
+                    const memoryPercent = data.memory_percent || 0;
                     const power = data.power || 0;
                     
                     document.getElementById('temp-value').textContent = `${temperature}°C`;
                     document.getElementById('util-value').textContent = `${utilization}%`;
-                    document.getElementById('mem-value').textContent = `${Math.round(memory)} MB`;
+                    document.getElementById('mem-value').textContent = `${Math.round(memory)} / ${Math.round(memoryTotal)} MB`;
+                    document.getElementById('mem-percent-label').textContent = `${formatNumber(memoryPercent)}%`;
                     document.getElementById('power-value').textContent = `${formatNumber(power)} W`;
                     
                     // Update gauges
                     updateGaugeColor(temperature, document.getElementById('temp-gauge'), 100);
                     updateGaugeColor(utilization, document.getElementById('util-gauge'), 100);
-                    updateGaugeColor(memory, document.getElementById('mem-gauge'), 24576);
+                    updateGaugeColor(memoryPercent, document.getElementById('mem-gauge'), 100);
                     updateGaugeColor(power, document.getElementById('power-gauge'), 400);
                     
                     // Update current processes
