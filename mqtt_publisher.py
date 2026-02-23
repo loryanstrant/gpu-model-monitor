@@ -200,6 +200,22 @@ class GPUMQTTPublisher:
                 "icon": "mdi:memory"
             },
             {
+                "name": "GPU Memory Total",
+                "state_topic": f"{self.mqtt_topic_prefix}/memory_total",
+                "unit_of_measurement": "MiB",
+                "state_class": "measurement",
+                "unique_id": f"{device_id}_memory_total",
+                "icon": "mdi:memory"
+            },
+            {
+                "name": "GPU Memory Utilization",
+                "state_topic": f"{self.mqtt_topic_prefix}/memory_percent",
+                "unit_of_measurement": "%",
+                "state_class": "measurement",
+                "unique_id": f"{device_id}_memory_percent",
+                "icon": "mdi:memory"
+            },
+            {
                 "name": "GPU Power Draw",
                 "state_topic": f"{self.mqtt_topic_prefix}/power",
                 "unit_of_measurement": "W",
@@ -289,6 +305,7 @@ class GPUMQTTPublisher:
                     "memory_current": proc.get("memory", 0),
                     "memory_max": proc.get("max_memory", 0),
                     "memory_avg": proc.get("avg_memory", 0),
+                    "memory_percent": proc.get("memory_percent", 0),
                     "process_start_time": start_time_str,
                     "first_seen_by_container": proc.get("first_seen", "unknown"),
                     "last_seen": proc.get("last_seen", "unknown"),
@@ -402,6 +419,8 @@ class GPUMQTTPublisher:
             temperature = metrics_data.get('temperature', 0)
             utilization = metrics_data.get('utilization', 0)
             memory = metrics_data.get('memory', 0)
+            memory_total = metrics_data.get('memory_total', 0)
+            memory_percent = metrics_data.get('memory_percent', 0)
             power = metrics_data.get('power', 0)
             
             # Count current processes
@@ -419,6 +438,8 @@ class GPUMQTTPublisher:
                 'temperature': temperature,
                 'utilization': utilization,
                 'memory': memory,
+                'memory_total': memory_total,
+                'memory_percent': memory_percent,
                 'power': power,
                 'process_count': process_count
             }
@@ -434,6 +455,8 @@ class GPUMQTTPublisher:
                 "temperature": temperature,
                 "utilization": utilization,
                 "memory": memory,
+                "memory_total": memory_total,
+                "memory_percent": memory_percent,
                 "power": power,
                 "process_count": process_count
             }
