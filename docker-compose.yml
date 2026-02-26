@@ -1,18 +1,15 @@
 services:
   gpu-model-monitor:
-    container_name: GPU-Model-Monitor-DEV
-    image: ghcr.io/loryanstrant/gpu-model-monitor:mqtt-dev
-    build:
-      context: .
-      dockerfile: Dockerfile
+    container_name: GPU-Model-Monitor
+    image: ghcr.io/loryanstrant/gpu-model-monitor:latest
     pid: "host"
     ports:
-      - "8083:8081"
+      - "8081:8081"
     environment:
       - TZ=Australia/Melbourne
       # MQTT Configuration
       - MQTT_ENABLED=true
-      - MQTT_HOST=mqtt.strant.casa
+      - MQTT_HOST=mqtt.local
       - MQTT_PORT=1883
       - MQTT_SSL=false
       - MQTT_USERNAME=mqtt
@@ -20,14 +17,7 @@ services:
       - MQTT_TOPIC_PREFIX=gpu_monitor
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - /home/docker/GPUModelMonitorDEV/history:/app/history:rw
-      - /home/docker/GPUModelMonitorDEV/logs:/app/logs:rw
+      - /home/docker/GPU-Model-Monitor/history:/app/history:rw
+      - /home/docker/GPU-Model-Monitor/logs:/app/logs:rw
     restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    runtime: nvidia
+    gpus: "all"
